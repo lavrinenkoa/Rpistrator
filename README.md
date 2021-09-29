@@ -1,2 +1,2 @@
 # Rpistrator
-Open-source GPS tracler on Linux  Raspberry Pi platform
+Open-source GPS tracker on Linux  Raspberry Pi platform
