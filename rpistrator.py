@@ -1,11 +1,12 @@
 #!/usr/bin/python3
 import os
+import threading
 from gps import *
 from time import *
 import time
 from datetime import datetime
+from math import sin, cos, sqrt, atan2, radians
 
-import threading
 
 gpsd = None
 dbg = True
@@ -31,7 +32,7 @@ class GpsProcessor:
 
     @staticmethod
     def is_gps_values_filtered():
-        pass
+        return False
 
     @staticmethod
     def show():
@@ -74,6 +75,8 @@ class FileTracker:
         self.gpx_file_started = False
         self.gpx_file = None
         self.gpx_file_name = ""
+        self.prev_lat = 0.0
+        self.prev_lng = 0.0
 
     def gpx_file_update(self):
         ret = False
@@ -128,6 +131,9 @@ class FileTracker:
                 gpx_trk_seg_open = "\n<trkseg>\n"
                 self.gpx_file.write(gpx_head + gpx_trk_seg_open)
                 print("Head created", self.gpx_file_name)
+
+                self.prev_lat = gpsd.fix.latitude
+                self.prev_lng = gpsd.fix.longitude
 
                 point = Point()
                 point.date = gpsd.utc
@@ -191,8 +197,40 @@ class FileTracker:
         os.sync()
         pass
 
+    def distance_between(self, lat1, lon1, lat2, lon2):
+        r = 6373.0
+        lat1 = radians(lat1)
+        lon1 = radians(lon1)
+        lat2 = radians(lat2)
+        lon2 = radians(lon2)
+
+        dlon = lon2 - lon1
+        dlat = lat2 - lat1
+        a = (sin(dlat/2))**2 + cos(lat1) * cos(lat2) * (sin(dlon/2))**2
+        c = 2 * atan2(sqrt(a), sqrt(1-a))
+        distance = r * c
+        return distance
+
     def is_filtered(self):
-        return False
+        ret = False
+        if not GpsProcessor.is_gps_values_valid():
+            print("GPS data isn't ready. Waiting correct date...")
+            ret = False
+            return ret
+
+        d_max = 100.0   # spd<50km/h
+        d_min = 5.0
+
+        delta = self.distance_between(gpsd.fix.latitude,
+                                      gpsd.fix.longitude,
+                                      self.prev_lat,
+                                      self.prev_lng)
+
+        if (delta < d_min) or (delta > d_max):
+            self.prev_lat = gpsd.fix.latitude
+            self.prev_lng = gpsd.fix.longitude
+            return True
+        return ret
 
 
 class IFTTT:    # If This Then That

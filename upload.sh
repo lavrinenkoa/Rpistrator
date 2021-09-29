@@ -1,7 +1,7 @@
 echo `date` Copy
 USER=pi
 HOMEFOLDER=/home/pi
-IP=192.168.0.105
+IP=192.168.0.110
 # ssh $USER@$IP ls -l $HOMEFOLDER
 scp rpistrator.py $USER@$IP:$HOMEFOLDER
 #echo Run
