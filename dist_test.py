@@ -36,8 +36,8 @@ def test():
     c = 2 * atan2(sqrt(a), sqrt(1-a))
     distance = r * c
 
-    print("Result", distance)
-    print("Should be", 278.546)
+    print("Result", distance, "km")
+    print("Should be", 278.546, "km")
     return distance
 
 

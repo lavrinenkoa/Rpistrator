@@ -198,7 +198,9 @@ class FileTracker:
         pass
 
     def distance_between(self, lat1, lon1, lat2, lon2):
-        r = 6373.0
+        # r = 6373.0
+        r = 6.373
+
         lat1 = radians(lat1)
         lon1 = radians(lon1)
         lat2 = radians(lat2)
@@ -215,11 +217,11 @@ class FileTracker:
         ret = False
         if not GpsProcessor.is_gps_values_valid():
             print("GPS data isn't ready. Waiting correct date...")
-            ret = False
+            ret = True
             return ret
 
-        d_max = 100.0   # spd<50km/h
-        d_min = 5.0
+        d_max = 100.0   # meters # spd<50km/h
+        d_min = 5.0     # meters
 
         delta = self.distance_between(gpsd.fix.latitude,
                                       gpsd.fix.longitude,
@@ -227,6 +229,7 @@ class FileTracker:
                                       self.prev_lng)
 
         if (delta < d_min) or (delta > d_max):
+            print("GPS date filtered!", delta, "<", d_min, delta, ">", d_max)
             self.prev_lat = gpsd.fix.latitude
             self.prev_lng = gpsd.fix.longitude
             return True
