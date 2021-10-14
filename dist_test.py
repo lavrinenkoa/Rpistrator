@@ -18,7 +18,7 @@ from math import sin, cos, sqrt, atan2, radians
 
 # def distance_between(self, lat1, lon1, lat2, lon2):
 def test():
-    r = 6373.0
+    r = 6373000.0
     # test data
     lat1 = radians(52.2296756)
     lon1 = radians(21.0122287)
@@ -36,7 +36,7 @@ def test():
     c = 2 * atan2(sqrt(a), sqrt(1-a))
     distance = r * c
 
-    print("Result", distance, "km")
+    print("Result", distance, "m")
     print("Should be", 278.546, "km")
     return distance
 

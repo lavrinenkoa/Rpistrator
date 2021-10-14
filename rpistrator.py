@@ -6,7 +6,7 @@ from time import *
 import time
 from datetime import datetime
 from math import sin, cos, sqrt, atan2, radians
-
+import json
 
 gpsd = None
 dbg = True
@@ -71,12 +71,16 @@ class Point:
 
 class FileTracker:
     def __init__(self):
+        self.max_points_buffer_size = 10
+        self.filter_distance_min = 7.0      # 5-8 meters
+        self.filter_distance_max = 100.0    # meters # spd<50km/h
         self.points = []
         self.gpx_file_started = False
         self.gpx_file = None
         self.gpx_file_name = ""
         self.prev_lat = 0.0
         self.prev_lng = 0.0
+        self.delta = 0.0
 
     def gpx_file_update(self):
         ret = False
@@ -93,6 +97,7 @@ class FileTracker:
             print("GPS date filtered!")
             return False
 
+        self.add_point()
         self.write_points()
 
     def gpx_file_init(self):
@@ -173,6 +178,25 @@ class FileTracker:
             self.points.append(point)
 
     def write_points(self):
+        if len(self.points) >= self.max_points_buffer_size:
+            self.gpx_file = open(self.gpx_file_name, "r+b")
+
+            print("Flush points")
+            for point in self.points:
+                self.gpx_file.seek(-24, 2)
+                # <trkpt lat="53.932846" lon="27.488501"><ele>328.5</ele><speed>4.0</speed><time>2020-11-09T16:21:45Z</time></trkpt>
+                trkpt = '<trkpt lat="{}" lon="{}"><ele>{}</ele><speed>{}</speed><time>{}</time></trkpt>' \
+                    .format(point.latitude, point.longitude, point.altitude, point.speed, point.date)
+                tail = "\n</trkseg>\n</trk>\n</gpx>\n"
+                self.gpx_file.write((trkpt + tail).encode())
+                print(".")
+
+            self.points.clear()
+            self.gpx_file.flush()
+            self.gpx_file.close()
+            os.sync()
+
+    def write_point(self):
         point = Point()
         point.date = gpsd.utc
         point.latitude = gpsd.fix.latitude
@@ -195,11 +219,10 @@ class FileTracker:
         self.gpx_file.flush()
         self.gpx_file.close()
         os.sync()
-        pass
 
     def distance_between(self, lat1, lon1, lat2, lon2):
         # r = 6373.0
-        r = 6.373
+        r = 6373000.0
 
         lat1 = radians(lat1)
         lon1 = radians(lon1)
@@ -210,7 +233,7 @@ class FileTracker:
         dlat = lat2 - lat1
         a = (sin(dlat/2))**2 + cos(lat1) * cos(lat2) * (sin(dlon/2))**2
         c = 2 * atan2(sqrt(a), sqrt(1-a))
-        distance = r * c
+        distance: float = r * c
         return distance
 
     def is_filtered(self):
@@ -220,20 +243,72 @@ class FileTracker:
             ret = True
             return ret
 
-        d_max = 100.0   # meters # spd<50km/h
-        d_min = 5.0     # meters
+        d_max = self.filter_distance_max   # meters # spd<50km/h
+        d_min = 5.0  # self.filter_distance_min   # 5-8 meters
 
-        delta = self.distance_between(gpsd.fix.latitude,
-                                      gpsd.fix.longitude,
-                                      self.prev_lat,
-                                      self.prev_lng)
+        self.delta = self.distance_between(gpsd.fix.latitude,
+                                           gpsd.fix.longitude,
+                                           self.prev_lat,
+                                           self.prev_lng)
+        print(gpsd.fix.latitude, "\t", gpsd.fix.longitude)
+        print(self.prev_lat, "\t",     self.prev_lng)
+        print("delta=", self.delta, "m.")
 
-        if (delta < d_min) or (delta > d_max):
-            print("GPS date filtered!", delta, "<", d_min, delta, ">", d_max)
+        self.delta = round(self.delta, 5)
+        print("delta=", round(self.delta, 5), "m")
+
+        if (self.delta < d_min) or (self.delta > d_max):
+            print("GPS date filtered!", self.delta, "<", d_min, self.delta, ">", d_max)
             self.prev_lat = gpsd.fix.latitude
             self.prev_lng = gpsd.fix.longitude
             return True
+        else:
+            self.prev_lat = gpsd.fix.latitude
+            self.prev_lng = gpsd.fix.longitude
+            print("SAVE!")
+
         return ret
+
+
+class TrackSyncker:
+    def __init__(self):
+        self.sync_file_name = "sync.json"
+
+    def sync_files(self):
+        fs = dict()
+        js = dict()
+        js_new = dict()
+
+        files = os.listdir('.')
+        for file_name in files:
+            if file_name.endswith(".gpx"):
+                file_size = os.path.getsize(file_name)
+                fs[file_name] = file_size
+        print("FS:", fs)
+
+        if os.path.isfile(self.sync_file_name):
+            with open(self.sync_file_name, 'r') as f:
+                js = json.loads(f.read())
+        # else:
+        #     with open(self.sync_file_name, 'w') as f:
+        #         f.write(json.dumps(fs))
+        print("JS:", js)
+
+        for file_name in fs:
+            if (js.get(file_name) is None) or (js[file_name] != fs[file_name]):
+                ret = self.upload(file_name)
+                if ret:
+                    print("Add", file_name)
+                    js_new[file_name] = os.path.getsize(file_name)
+            js_new[file_name] = fs[file_name]
+        print("JS_NEW:", js_new)
+
+        with open(self.sync_file_name, 'w') as f:
+            f.write(json.dumps(js_new))
+
+    def upload(self, file):
+        print("Up:", file)
+        return True
 
 
 class IFTTT:    # If This Then That
@@ -259,6 +334,10 @@ if __name__ == '__main__':
     gpsProcessor = GpsProcessor()
     fileTracker = FileTracker()
     ifttt = IFTTT()
+    track_syncker = TrackSyncker()
+
+    track_syncker.sync_files()
+
     try:
         gpsp.start()  # start it up
         while True:
